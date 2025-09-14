@@ -1,11 +1,11 @@
 // ==========================
-// index.mjs (REPLACE ALL)
+// index.mjs (complete server)
 // ==========================
 
 import express from "express";
 import cors from "cors";
 import OpenAI from "openai";
-import jobsData from "./data/jobs.json" assert { type: "json" };
+import { readFileSync } from "node:fs";
 
 const app = express();
 app.use(cors());
@@ -68,9 +68,8 @@ You are a helpful, candid assistant for clinicians looking for jobs and guidance
 
     pushMsg(session_id, { role: "user", content: message });
 
-    // Choose a fast, inexpensive model
     const stream = await openai.chat.completions.create({
-      model: "gpt-4o-mini", // fast & cheap; switch if you want
+      model: "gpt-4o-mini", // fast & inexpensive
       stream: true,
       temperature: 0.4,
       messages: msgs,
@@ -89,9 +88,8 @@ You are a helpful, candid assistant for clinicians looking for jobs and guidance
 
     if (assistantText) pushMsg(session_id, { role: "assistant", content: assistantText });
 
-    // Simple signal to UI to render job blocks if user talked about jobs
+    // Add jobs block if user asked about jobs
     if (/\b(crna|anesth|urology|radiology|urgent care|job|jobs|locum)\b/i.test(message)) {
-      // send a small list from our API (client can decide how to show)
       const items = JOBS.slice(0, 3);
       sseSend(res, { type: "blocks", data: [{ type: "jobs", items }] });
     }
@@ -107,15 +105,17 @@ You are a helpful, candid assistant for clinicians looking for jobs and guidance
 // --------------------------
 // JOBS API (from data/jobs.json)
 // --------------------------
+const jobsData = JSON.parse(
+  readFileSync(new URL("./data/jobs.json", import.meta.url), "utf8")
+);
+
 const JOBS = jobsData.map((j) => ({
   ...j,
-  // Normalize a display rate if one isn't provided
   rate:
     j.rate ||
     (j.rate_numeric && j.rate_unit
       ? `$${j.rate_numeric}/${j.rate_unit === "day" ? "day" : "hr"}`
       : undefined),
-  // Provide a default internal URL (UI can use it as a CTA)
   url: j.url || `/jobs/${j.job_id}`,
 }));
 
@@ -143,5 +143,3 @@ app.get("/", (_req, res) => res.send("OK"));
 // Start server
 // --------------------------
 app.listen(process.env.PORT || 3000, () => console.log("Server running"));
-
-
