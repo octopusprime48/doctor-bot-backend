@@ -1,0 +1,20 @@
+[
+  {
+    "job_id": "JO-00472",
+    "title": "CRNA – General Cases",
+    "rate": "$205/hour",
+    "city": "Tampa",
+    "state": "FL",
+    "priority": "High",
+    "metaLine": "On-site • Locum • Mon–Fri"
+  },
+  {
+    "job_id": "JO-00466",
+    "title": "Anesthesiology MD",
+    "rate": "$3200/day",
+    "city": "Harrisburg",
+    "state": "PA",
+    "priority": "High",
+    "metaLine": "On-site • Locum"
+  }
+]
