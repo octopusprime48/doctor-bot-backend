@@ -55,7 +55,7 @@ You are a helpful, candid assistant for clinicians looking for jobs and guidance
     pushMsg(session_id, { role: "user", content: message });
 
     const stream = await openai.chat.completions.create({
-      model: "gpt-5-mini",   // fast & inexpensive
+      model: "gpt-4o-mini",   // ✅ widely available model
       stream: true,
       temperature: 0.4,
       messages: msgs
@@ -82,6 +82,7 @@ You are a helpful, candid assistant for clinicians looking for jobs and guidance
 
     res.end();
   } catch (e) {
+    console.error("Chat error:", e.message);
     sseSend(res, { type: "text", data: "\n(Sorry, something went wrong.)" });
     res.end();
   }
