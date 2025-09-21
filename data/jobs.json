@@ -1,20 +1,81 @@
 [
   {
-    "job_id": "JO-00472",
+    "job_id": "JO-10001",
     "title": "CRNA – General Cases",
-    "rate": "$205/hour",
-    "city": "Tampa",
-    "state": "FL",
+    "profession": "CRNA",
+    "specialty": "Anesthesia",
+    "city": "Albuquerque",
+    "state": "NM",
+    "rate_numeric": 180,
+    "rate_unit": "hour",
     "priority": "High",
-    "metaLine": "On-site • Locum • Mon–Fri"
+    "metaLine": "On-site • Locum • Mon–Fri",
+    "description": "Bread-and-butter cases, low call. Travel and lodging covered."
   },
   {
-    "job_id": "JO-00466",
-    "title": "Anesthesiology MD",
-    "rate": "$3200/day",
+    "job_id": "JO-10002",
+    "title": "Anesthesiologist – Community Hospital",
+    "profession": "MD",
+    "specialty": "Anesthesiology",
     "city": "Harrisburg",
     "state": "PA",
+    "rate_numeric": 350,
+    "rate_unit": "hour",
+    "priority": "Medium",
+    "metaLine": "On-site • Locum • No call",
+    "description": "Mostly general and ortho; credentialing support available."
+  },
+  {
+    "job_id": "JO-10003",
+    "title": "NP/PA – Urgent Care",
+    "profession": "PA",
+    "specialty": "Urgent Care",
+    "city": "Springfield",
+    "state": "IL",
+    "rate_numeric": 95,
+    "rate_unit": "hour",
     "priority": "High",
-    "metaLine": "On-site • Locum"
+    "metaLine": "On-site • 12-hour shifts",
+    "description": "Suturing, splinting, X-ray interpretation; weekend rotation."
+  },
+  {
+    "job_id": "JO-10004",
+    "title": "Radiologist – Teleradiology Evenings",
+    "profession": "MD",
+    "specialty": "Diagnostic Radiology",
+    "city": "Remote",
+    "state": "NV",
+    "rate_numeric": 425,
+    "rate_unit": "hour",
+    "priority": "High",
+    "metaLine": "Remote • 4pm–12am",
+    "description": "General reads; no IR; steady volume; malpractice covered."
+  },
+  {
+    "job_id": "JO-10005",
+    "title": "CRNA – Bread & Butter + OB",
+    "profession": "CRNA",
+    "specialty": "Anesthesia",
+    "city": "Santa Fe",
+    "state": "NM",
+    "rate_numeric": 200,
+    "rate_unit": "hour",
+    "priority": "Medium",
+    "metaLine": "On-site • Call optional",
+    "description": "Regional preferred; MD-led team; travel stipend."
+  },
+  {
+    "job_id": "JO-10006",
+    "title": "Orthopedic Surgery – Clinic + OR Assist",
+    "profession": "MD",
+    "specialty": "Orthopedics",
+    "city": "Ocala",
+    "state": "FL",
+    "rate_numeric": 3500,
+    "rate_unit": "day",
+    "priority": "Medium",
+    "metaLine": "On-site • Locum",
+    "description": "Joint focus; ASC time available; friendly staff."
   }
 ]
+
