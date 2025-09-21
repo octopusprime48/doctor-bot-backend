@@ -28,13 +28,22 @@ try {
 const norm = s => String(s ?? "").trim();
 const same = (a,b) => norm(a).toUpperCase() === norm(b).toUpperCase();
 
+// Normalize pay unit so "hr", "hour", "hours" all match; same for "day"
+function canonUnit(u) {
+  const x = String(u || "").trim().toLowerCase();
+  if (["hr","hour","hours","/hr","/hour"].includes(x)) return "hour";
+  if (["day","daily","/day"].includes(x)) return "day";
+  return x;
+}
+
+
 function filterJobs({ state, profession, specialty, unit, minRate }) {
   const min = Number(minRate) || 0;
   return JOBS.filter(j => {
     if (state && !same(j.state, state)) return false;
     if (profession && !same(j.profession, profession)) return false;
     if (specialty && !same(j.specialty, specialty)) return false;
-    if (unit && norm(j.rate_unit).toLowerCase() !== norm(unit).toLowerCase()) return false;
+    if (unit && canonUnit(j.rate_unit) !== canonUnit(unit)) return false;
     if (min && Number(j.rate_numeric || 0) < min) return false;
     return true;
   });
@@ -101,14 +110,26 @@ app.post("/api/chat", async (req, res) => {
   try {
     const message = norm(req.body.message || "");
     const clientFilters = req.body.filters || {};
-    const parsed = extractFiltersFromText(message);
-    const filters = { ...parsed, ...clientFilters };
 
+    // very light extraction (keeps chat flexible)
+    const st = message.match(/\b(AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY)\b/i);
+    const parsed = {
+      ...(st ? { state: st[0].toUpperCase() } : {}),
+      ...( /\bCRNA\b/i.test(message) ? { profession:"CRNA" } : {}),
+      ...( /\bNP\b/i.test(message)   ? { profession:"NP"   } : {}),
+      ...( /\bPA\b/i.test(message)   ? { profession:"PA"   } : {}),
+      ...( /\bMD\b/i.test(message)   ? { profession:"MD"   } : {}),
+      ...( /\bANESTH/i.test(message) ? { specialty:"Anesthesiology" } : {}),
+      ...( /\bRADIOLOG/i.test(message)? { specialty:"Diagnostic Radiology" } : {})
+    };
+    const r = message.match(/(\$?\d{2,4})(?:\s*\/\s*(hour|hr|day))/i);
+    if (r) { parsed.minRate = r[1].replace(/\$/g,""); parsed.unit = /day/i.test(r[2]) ? "day" : "hour"; }
+
+    const filters = { ...parsed, ...clientFilters };
     const { matches } = findWithNearby(filters);
 
     const system = `
 You are a helpful healthcare career guide.
-
 RULES:
 - Never invent job openings or details. You may only reference jobs from MATCHES_JSON.
 - If MATCHES_JSON is empty for the requested place, offer nearby alternatives (clearly labeled as nearby).
@@ -139,7 +160,8 @@ Task:
     res.status(500).json({ error: "chat_failed" });
   }
 });
+app.use(cors({
+  origin: ["https://career-clinician-chat.lovable.app"],
+  methods: ["GET","POST","OPTIONS"],
+}));
 
-// --- Always listen (prevents “exited early”) ---
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`API listening on ${PORT}`));
