@@ -160,8 +160,14 @@ Task:
     res.status(500).json({ error: "chat_failed" });
   }
 });
-app.use(cors({
-  origin: ["https://career-clinician-chat.lovable.app"],
-  methods: ["GET","POST","OPTIONS"],
-}));
+  } catch (err) {
+    console.error("[/api/chat] error:", err);
+    res.status(500).json({ error: "chat_failed" });
+  }
+});
+
+// --- Always listen (prevents “exited early”) ---
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`API listening on ${PORT}`));
+
 
