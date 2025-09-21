@@ -1,145 +1,106 @@
-// ==========================
-// index.mjs (complete server)
-// ==========================
-
 import express from "express";
+import fs from "fs";
 import cors from "cors";
 import OpenAI from "openai";
-import { readFileSync } from "node:fs";
 
 const app = express();
-app.use(cors());
 app.use(express.json());
+app.use(cors({ origin: ["https://career-clinician-chat.lovable.app"] }));
 
-// --------------------------
-// In-memory session memory
-// --------------------------
-const sessions = new Map(); // session_id -> [{role, content}]
-function getHistory(session_id) {
-  if (!sessions.has(session_id)) sessions.set(session_id, []);
-  return sessions.get(session_id);
-}
-function pushMsg(session_id, msg) {
-  const h = getHistory(session_id);
-  h.push(msg);
-  if (h.length > 24) h.splice(0, h.length - 24); // keep ~12 turns
-}
+// Load jobs once at startup (Render-safe)
+const JOBS = JSON.parse(fs.readFileSync("./data/jobs.json", "utf8"));
 
-// --------------------------
-// OpenAI client
-// --------------------------
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// --- tiny helpers ---
+const norm = (s) => String(s || "").trim();
+const same = (a, b) => norm(a).toUpperCase() === norm(b).toUpperCase();
 
-// --------------------------
-// SSE helpers
-// --------------------------
-function sseHeaders(res) {
-  res.setHeader("Content-Type", "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache, no-transform");
-  res.setHeader("Connection", "keep-alive");
-}
-function sseSend(res, obj) {
-  res.write(`data: ${JSON.stringify(obj)}\n\n`);
+function filterJobs({ state, profession, specialty, unit, minRate }) {
+  const min = Number(minRate) || 0;
+  return JOBS.filter(j => {
+    if (state && !same(j.state, state)) return false;
+    if (profession && !same(j.profession, profession)) return false;
+    if (specialty && !same(j.specialty, specialty)) return false;
+    if (unit && norm(j.rate_unit).toLowerCase() !== norm(unit).toLowerCase()) return false;
+    if (min && Number(j.rate_numeric || 0) < min) return false;
+    return true;
+  });
 }
 
-// --------------------------
-// CHAT: streams like ChatGPT
-// --------------------------
+// very lightweight “intent/filters” extractor
+function extractFiltersFromText(text) {
+  const out = {};
+  const mState = text.match(/\b(AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY)\b/i);
+  if (mState) out.state = mState[0].toUpperCase();
+
+  // trivial profession/specialty grab
+  if (/\bCRNA\b/i.test(text)) out.profession = "CRNA";
+  else if (/\bANESTH(ESIA|ESIOLOG(Y|IST))\b/i.test(text)) out.specialty = "Anesthesiology";
+  else if (/\bRAD(IOLOGY|IOLOGIST)\b/i.test(text)) out.specialty = "Diagnostic Radiology";
+  else if (/\bNP\b/i.test(text)) out.profession = "NP";
+  else if (/\bPA\b/i.test(text)) out.profession = "PA";
+  else if (/\bMD\b/i.test(text)) out.profession = "MD";
+
+  const rate = text.match(/(\$?\d{2,4})(?:\s*\/\s*(hour|hr|day))/i);
+  if (rate) {
+    out.minRate = rate[1].replace(/\$/g, "");
+    out.unit = /day/i.test(rate[2]) ? "day" : "hour";
+  }
+  return out;
+}
+
+// --- the grounded chat endpoint ---
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
 app.post("/api/chat", async (req, res) => {
   try {
-    const { message = "", session_id = "anon" } = req.body || {};
-    sseHeaders(res);
+    const message = norm(req.body.message || "");
+    const clientFilters = req.body.filters || {};
+    const parsed = extractFiltersFromText(message);
+    const filters = { ...parsed, ...clientFilters }; // UI can pass structured filters too
 
-    const SYSTEM_PROMPT = `
-You are a helpful, candid assistant for clinicians looking for jobs and guidance.
-- Keep answers concise and conversational.
-- If the user asks about jobs, suggest realistic options and trade-offs.
-- Never reveal facility names; show rate first, then title, then "City, ST", JO-ID, Priority.
-    `.trim();
+    // Run a real search over JSON
+    const matches = filterJobs(filters);
 
-    const history = getHistory(session_id);
-    const msgs = [
-      { role: "system", content: SYSTEM_PROMPT },
-      ...history,
-      { role: "user", content: message },
-    ];
+    // Build a strict system message: model may NOT invent jobs
+    const system = `
+You are a helpful healthcare career guide.
+RULES:
+- You may NOT invent job openings or details. You can only mention jobs contained in MATCHES_JSON.
+- If MATCHES_JSON is empty, say there are no current matches and ask clarifying preferences (state, specialty, profession, rate).
+- You ARE allowed to answer lifestyle/region questions (weather, cost of living, things to do) using general knowledge,
+  but do not claim a job exists if it's not in MATCHES_JSON.
+- When listing jobs, show: title, city/state, rate (rate_numeric + rate_unit), and job_id. Keep it concise.
+`;
 
-    pushMsg(session_id, { role: "user", content: message });
+    const user = `
+User message: ${message}
 
-    const stream = await openai.chat.completions.create({
-      model: "gpt-4o-mini", // fast & inexpensive
-      stream: true,
-      temperature: 0.4,
-      messages: msgs,
+Filters used: ${JSON.stringify(filters)}
+
+MATCHES_JSON (these are the ONLY jobs you may reference):
+${JSON.stringify(matches, null, 2)}
+
+Task:
+1) If user intent includes "find/show jobs", list ONLY the jobs from MATCHES_JSON (or say none).
+2) If the user also asked general questions (about an area, commute, lifestyle, etc.), answer those normally.
+3) Never invent jobs, titles, or rates.`;
+
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      temperature: 0.3, // keep it factual
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: user }
+      ]
     });
 
-    let assistantText = "";
-    sseSend(res, { type: "text", data: "" }); // prime client
-
-    for await (const part of stream) {
-      const delta = part?.choices?.[0]?.delta;
-      if (delta?.content) {
-        assistantText += delta.content;
-        sseSend(res, { type: "text", data: delta.content });
-      }
-    }
-
-    if (assistantText) pushMsg(session_id, { role: "assistant", content: assistantText });
-
-    // Add jobs block if user asked about jobs
-    if (/\b(crna|anesth|urology|radiology|urgent care|job|jobs|locum)\b/i.test(message)) {
-      const items = JOBS.slice(0, 3);
-      sseSend(res, { type: "blocks", data: [{ type: "jobs", items }] });
-    }
-
-    res.end();
-  } catch (e) {
-    console.error(e);
-    sseSend(res, { type: "text", data: "\n(Sorry, something went wrong.)" });
-    res.end();
+    res.json({
+      text: completion.choices?.[0]?.message?.content || "",
+      jobs: matches // let the frontend also render cards from real data
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "chat_failed" });
   }
 });
 
-// --------------------------
-// JOBS API (from data/jobs.json)
-// --------------------------
-const jobsData = JSON.parse(
-  readFileSync(new URL("./data/jobs.json", import.meta.url), "utf8")
-);
-
-const JOBS = jobsData.map((j) => ({
-  ...j,
-  rate:
-    j.rate ||
-    (j.rate_numeric && j.rate_unit
-      ? `$${j.rate_numeric}/${j.rate_unit === "day" ? "day" : "hr"}`
-      : undefined),
-  url: j.url || `/jobs/${j.job_id}`,
-}));
-
-app.get("/api/jobs", (_req, res) => {
-  res.json(JOBS);
-});
-
-app.get("/api/jobs/:id", (req, res) => {
-  const job = JOBS.find((j) => String(j.job_id) === String(req.params.id));
-  if (!job) return res.status(404).json({ error: "Not found" });
-  res.json({
-    ...job,
-    description:
-      job.description ||
-      "Details coming soon. Contact us for the full scope, schedule, and site information.",
-  });
-});
-
-// --------------------------
-// Health check
-// --------------------------
-app.get("/", (_req, res) => res.send("OK"));
-
-// --------------------------
-// Start server
-// --------------------------
-app.listen(process.env.PORT || 3000, () => console.log("Server running"));
